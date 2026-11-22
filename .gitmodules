@@ -1,0 +1,3 @@
+[submodule "core/touchHLE"]
+	path = core/touchHLE
+	url = https://github.com/touchHLE/touchHLE.git

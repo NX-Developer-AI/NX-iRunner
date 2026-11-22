@@ -1,0 +1,39 @@
+diff --git a/src/lib.rs b/src/lib.rs
+index fcfec3f..3a55625 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -67,8 +67,8 @@ pub use touchHLE_version::*;
+ #[cfg(target_os = "android")]
+ #[no_mangle]
+ pub extern "C" fn SDL_main(
+-    _argc: std::ffi::c_int,
+-    _argv: *const *const std::ffi::c_char,
++    argc: std::ffi::c_int,
++    argv: *const *const std::ffi::c_char,
+ ) -> std::ffi::c_int {
+     // Rust's default panic handler prints to stderr, but on Android that just
+     // gets discarded, so we set a custom hook to make debugging easier.
+@@ -87,8 +87,21 @@ pub extern "C" fn SDL_main(
+         }
+     }));
+ 
+-    // Empty args: brings up app picker.
+-    match main([String::new()].into_iter()) {
++    let mut launch_arguments: Vec<String> = Vec::new();
++    if !argv.is_null() {
++        for index in 0..argc.max(0) as usize {
++            let argument_pointer = unsafe { *argv.add(index) };
++            if argument_pointer.is_null() {
++                continue;
++            }
++            let argument = unsafe { std::ffi::CStr::from_ptr(argument_pointer) };
++            launch_arguments.push(argument.to_string_lossy().into_owned());
++        }
++    }
++    if launch_arguments.is_empty() {
++        launch_arguments.push(String::new());
++    }
++    match main(launch_arguments.into_iter()) {
+         Ok(_) => echo!("touchHLE finished"),
+         Err(e) => echo!("touchHLE errored: {e:?}"),
+     }

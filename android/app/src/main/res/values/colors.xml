@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="nx_background_light">#FFF6F5FF</color>
+    <color name="nx_background_dark">#FF0B1026</color>
+    <color name="ic_launcher_background">#FF0B1026</color>
+</resources>

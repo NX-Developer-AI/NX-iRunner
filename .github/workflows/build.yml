@@ -1,0 +1,188 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  NDK_VERSION: 25.2.9519653
+  NDK_RELEASE: r25c
+  BOOST_VERSION: 1_81_0
+  CMAKE_VERSION: 3.31.6
+  HAS_KEYSTORE: ${{ secrets.NX_KEYSTORE_BASE64 != '' }}
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Apply core patches
+        run: |
+          for patch in patches/touchHLE/*.patch; do
+            git -C core/touchHLE apply --whitespace=nowarn "$GITHUB_WORKSPACE/$patch"
+          done
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Boost
+        id: cache-boost
+        uses: actions/cache@v4
+        with:
+          path: core/touchHLE/vendor/boost
+          key: boost-${{ env.BOOST_VERSION }}
+
+      - name: Download Boost
+        if: steps.cache-boost.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o boost.7z "https://archives.boost.io/release/1.81.0/source/boost_${BOOST_VERSION}.7z"
+          7z -ocore/touchHLE/vendor x boost.7z > /dev/null
+          mv "core/touchHLE/vendor/boost_${BOOST_VERSION}" core/touchHLE/vendor/boost
+          rm boost.7z
+
+      - name: Cache CMake
+        id: cache-cmake
+        uses: actions/cache@v4
+        with:
+          path: tools/cmake
+          key: cmake-${{ env.CMAKE_VERSION }}-linux
+
+      - name: Download CMake
+        if: steps.cache-cmake.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p tools
+          curl -sSL "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz" | tar xz -C tools
+          mv "tools/cmake-${CMAKE_VERSION}-linux-x86_64" tools/cmake
+
+      - name: Cache Android NDK
+        id: cache-ndk
+        uses: actions/cache@v4
+        with:
+          path: tools/android-ndk
+          key: android-ndk-${{ env.NDK_RELEASE }}
+
+      - name: Download Android NDK
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p tools/android-ndk
+          curl -sSL -o ndk.zip "https://dl.google.com/android/repository/android-ndk-${NDK_RELEASE}-linux.zip"
+          7z -otools/android-ndk -snld x ndk.zip > /dev/null
+          rm ndk.zip
+
+      - name: Link Android NDK
+        run: |
+          mkdir -p "$ANDROID_SDK_ROOT/ndk"
+          rm -rf "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          ln -s "$GITHUB_WORKSPACE/tools/android-ndk/android-ndk-${NDK_RELEASE}" "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "CMAKE=$GITHUB_WORKSPACE/tools/cmake/bin/cmake" >> "$GITHUB_ENV"
+
+      - name: Install Rust toolchain
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup target add aarch64-linux-android
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/touchHLE -> target
+          cache-targets: true
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk@3.5.4 --locked
+
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.NX_KEYSTORE_BASE64 }}
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "NX_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Build APKs
+        working-directory: android
+        env:
+          NX_KEYSTORE_PASSWORD: ${{ secrets.NX_KEYSTORE_PASSWORD }}
+          NX_KEY_ALIAS: ${{ secrets.NX_KEY_ALIAS }}
+          NX_KEY_PASSWORD: ${{ secrets.NX_KEY_PASSWORD }}
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --console=plain assembleRelease assembleDebug > "$GITHUB_WORKSPACE/build.log" 2>&1
+
+      - name: Collect APKs
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/NX-iRunner-debug.apk
+          cp android/app/build/outputs/apk/release/app-release.apk dist/NX-iRunner-release.apk
+          ls -la dist
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NX-iRunner-debug
+          path: dist/NX-iRunner-debug.apk
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NX-iRunner-release
+          path: dist/NX-iRunner-release.apk
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/NX-iRunner-debug.apk
+            dist/NX-iRunner-release.apk
+          generate_release_notes: true
+
+      - name: Create error report
+        if: failure()
+        run: |
+          {
+            echo "NX iRunner build failure"
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "Commit: $GITHUB_SHA"
+            echo
+            echo "===== Errors ====="
+            if [ -f build.log ]; then
+              grep -nE "^e: |error(\[E[0-9]+\])?:|error: |FAILED|FAILURE|What went wrong|Could not|Exception|CMake Error|undefined reference|cannot find" build.log | head -300 || true
+              echo
+              echo "===== Last 250 lines of build log ====="
+              tail -n 250 build.log
+            else
+              echo "build.log not found; failure happened before the Gradle step."
+            fi
+          } > error.txt
+
+      - name: Upload error report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error
+          path: |
+            error.txt
+            build.log
