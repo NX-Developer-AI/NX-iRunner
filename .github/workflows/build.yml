@@ -15,6 +15,7 @@ env:
   NDK_RELEASE: r25c
   BOOST_VERSION: 1_81_0
   CMAKE_VERSION: 3.31.6
+  RUST_VERSION: 1.98.0
   HAS_KEYSTORE: ${{ secrets.NX_KEYSTORE_BASE64 != '' }}
 
 jobs:
@@ -100,14 +101,15 @@ jobs:
 
       - name: Install Rust toolchain
         run: |
-          rustup update stable --no-self-update
-          rustup default stable
+          rustup toolchain install "$RUST_VERSION" --profile minimal --no-self-update
+          rustup default "$RUST_VERSION"
           rustup target add aarch64-linux-android
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: core/touchHLE -> target
+          key: rust-${{ env.RUST_VERSION }}
           cache-targets: true
 
       - name: Install cargo-ndk
