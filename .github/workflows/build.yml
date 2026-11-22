@@ -84,7 +84,7 @@ jobs:
         run: |
           mkdir -p tools/android-ndk
           curl -sSL -o ndk.zip "https://dl.google.com/android/repository/android-ndk-${NDK_RELEASE}-linux.zip"
-          7z -otools/android-ndk -snld x ndk.zip > /dev/null
+          unzip -q ndk.zip -d tools/android-ndk
           rm ndk.zip
 
       - name: Link Android NDK
