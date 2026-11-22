@@ -32,6 +32,7 @@ jobs:
           for patch in patches/touchHLE/*.patch; do
             git -C core/touchHLE apply --whitespace=nowarn "$GITHUB_WORKSPACE/$patch"
           done
+          rm -f core/touchHLE/vendor/SDL/android-project/gradle/wrapper/gradle-wrapper.jar
 
       - name: Set up Java
         uses: actions/setup-java@v4
