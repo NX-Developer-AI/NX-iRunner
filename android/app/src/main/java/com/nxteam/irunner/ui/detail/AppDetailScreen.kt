@@ -49,6 +49,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nxteam.irunner.R
 import com.nxteam.irunner.data.library.InstalledApp
+import com.nxteam.irunner.ipa.CompatibilityLevel
 import com.nxteam.irunner.ui.ContainerViewModelFactory
 import com.nxteam.irunner.ui.components.AppIcon
 import com.nxteam.irunner.ui.components.CompatibilityChip
@@ -160,7 +161,10 @@ private fun Header(app: InstalledApp, onLaunch: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
-            Button(onClick = onLaunch) {
+            Button(
+                onClick = onLaunch,
+                enabled = app.compatibilityLevel != CompatibilityLevel.INCOMPATIBLE,
+            ) {
                 Icon(Icons.Rounded.PlayArrow, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
                 Text(stringResource(R.string.action_launch))

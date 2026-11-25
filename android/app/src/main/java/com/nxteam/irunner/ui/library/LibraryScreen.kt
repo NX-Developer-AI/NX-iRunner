@@ -54,6 +54,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nxteam.irunner.R
 import com.nxteam.irunner.data.library.ImportResult
 import com.nxteam.irunner.data.library.InstalledApp
+import com.nxteam.irunner.ipa.CompatibilityLevel
 import com.nxteam.irunner.ipa.IpaFormatException
 import com.nxteam.irunner.ui.ContainerViewModelFactory
 import com.nxteam.irunner.ui.components.AppIcon
@@ -159,7 +160,13 @@ fun LibraryScreen(
                     items(currentApps, key = { app -> app.bundleIdentifier }) { app ->
                         AppCard(
                             app = app,
-                            onClick = { viewModel.launch(app) },
+                            onClick = {
+                                if (app.compatibilityLevel == CompatibilityLevel.INCOMPATIBLE) {
+                                    onOpenApp(app.bundleIdentifier)
+                                } else {
+                                    viewModel.launch(app)
+                                }
+                            },
                             onLongClick = { onOpenApp(app.bundleIdentifier) },
                         )
                     }
